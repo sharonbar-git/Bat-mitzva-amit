@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>בדיקת שמירה משפחתית – עמית</title><style>body{font-family:Arial,sans-serif;max-width:680px;margin:35px auto;padding:0 16px;line-height:1.6;background:#faf9ff;color:#23213b}section{background:white;border:1px solid #ddd;border-radius:14px;padding:18px;margin:14px 0}input,select,button{font:inherit;padding:10px;border-radius:8px;border:1px solid #bbb;max-width:100%;box-sizing:border-box}input,select{width:100%;margin:6px 0 12px}button{background:#5143a5;color:white;cursor:pointer;margin:4px}button:disabled{opacity:.45;cursor:not-allowed}.note{color:#665d70}#message{white-space:pre-wrap;font-weight:bold}label{display:block;font-weight:bold}</style></head><body><h1>🧪 בדיקת שמירה משפחתית</h1><p>דף בדיקה נפרד מהאתר הראשי. שמירה כאן <strong>משנה את הנתונים האמיתיים בענן</strong>, לכן נבדוק שינוי קטן ונחזיר אותו לאחר מכן.</p><section id="loginPanel"><label for="password">סיסמה משפחתית</label><input id="password" type="password" autocomplete="current-password"><button id="login">התחברות</button></section><section id="editor" hidden><p>יעדים בענן: <strong id="count">—</strong> | גרסה נטענת: <strong id="revision">—</strong></p><button id="reload">טעינה מחדש מהענן</button><label for="place">בחרי יעד לבדיקה</label><select id="place"></select><label for="name">שם היעד (אפשר לשנות ולהחזיר)</label><input id="name" type="text" maxlength="299"><button id="save">שמירת השינוי בענן</button><button id="restore" disabled>החזרת השם המקורי</button><p class="note">לבדיקת התנגשות: פתחי את הדף בשני חלונות, התחברי בשניהם, טעני את אותם הנתונים, שמרי שינוי בחלון הראשון ואז נסי לשמור שינוי בחלון השני. בחלון השני אמורה להתקבל הודעת התנגשות (409), בלי דריסה.</p></section><section><div id="message" role="status" aria-live="polite">ממתין להתחברות.</div></section><script>
+'use strict';
+const API='https://lyubtpqyhzdkrzhrbqlu.supabase.co/functions/v1/family-api';
+const $=id=>document.getElementById(id);
+let token='',places=[],start='',revision=null,originalName='',selectedId='';
+function msg(t){$('message').textContent=t;}
+async function request(action,other={}){
+ const headers={'Content-Type':'application/json'};
+ if(token)headers.Authorization='Bearer '+token;
+ const response=await fetch(API,{method:'POST',headers,body:JSON.stringify({action,...other}),cache:'no-store'});
+ let data;try{data=await response.json();}catch{throw new Error('תשובת שרת לא תקינה ('+response.status+')');}
+ if(!response.ok){const e=new Error(data.error||'שגיאה');e.status=response.status;e.data=data;throw e;}
+ return data;
+}
+function selectPlace(id){const p=places.find(p=>p.id===id);if(!p)return;selectedId=id;originalName=p.name;$('name').value=p.name;$('restore').disabled=true;}
+function show(){
+ $('count').textContent=places.length;$('revision').textContent=revision;
+ const prior=selectedId;
+ $('place').replaceChildren();
+ for(const p of places){const o=document.createElement('option');o.value=p.id;o.textContent=p.name;$('place').append(o);}
+ selectPlace(places.some(p=>p.id===prior)?prior:places[0]?.id);
+ $('place').value=selectedId;
+}
+async function load(){const data=await request('load');if(!Array.isArray(data.places)||!Number.isSafeInteger(data.revision))throw new Error('השרת לא החזיר נתונים וגרסה תקינים');places=data.places;start=data.start;revision=data.revision;show();msg('נטענו '+places.length+' יעדים. גרסה '+revision+'.');}
+$('login').onclick=async()=>{const b=$('login');b.disabled=true;try{const data=await request('login',{password:$('password').value});token=data.token;$('password').value='';await load();$('loginPanel').hidden=true;$('editor').hidden=false;}catch(e){msg('שגיאת התחברות/טעינה: '+e.message);}finally{b.disabled=false;}};
+$('reload').onclick=async()=>{try{await load();}catch(e){msg('שגיאת טעינה: '+e.message);}};
+$('place').onchange=()=>selectPlace($('place').value);
+$('name').oninput=()=>{$('restore').disabled=$('name').value===originalName;};
+async function saveName(){
+ const name=$('name').value.trim();if(!name){msg('שם היעד לא יכול להיות ריק');return;}
+ const index=places.findIndex(p=>p.id===selectedId);if(index<0)return;
+ const changed=places.map((p,i)=>i===index?{...p,name}:p);
+ const button=$('save');button.disabled=true;
+ try{const data=await request('save',{places:changed,start,revision});places=changed;revision=data.revision;show();msg('✅ נשמר בענן. גרסה חדשה: '+revision+'.');}
+ catch(e){if(e.status===409){msg('⚠️ התנגשות (409): מישהו שמר שינוי מאז שטענת את הדף. שום דבר לא נדרס. לחצי "טעינה מחדש מהענן" לפני עריכה נוספת.');}else msg('שגיאת שמירה: '+e.message);}
+ finally{button.disabled=false;}
+}
+$('save').onclick=saveName;
+$('restore').onclick=()=>{$('name').value=originalName;$('restore').disabled=true;};
+</script></body></html>
